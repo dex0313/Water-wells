@@ -10,9 +10,9 @@ void wifiInit() {
 #ifdef ROLE_BASE
     WiFi.mode(WIFI_STA);
 
-#if WIFI_STATIC_IP
-    WiFi.config(WIFI_IP, WIFI_GATEWAY, WIFI_SUBNET, WIFI_DNS);
-#endif
+// #if WIFI_STATIC_IP
+//     WiFi.config(WIFI_IP, WIFI_GATEWAY, WIFI_SUBNET, WIFI_DNS);
+// #endif
 
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 #endif

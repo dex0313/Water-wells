@@ -4,12 +4,12 @@
 #define WIFI_SSID       "Wifi"
 #define WIFI_PASSWORD   ""
 
-#define WIFI_STATIC_IP  true
+// #define WIFI_STATIC_IP  true
 
-#define WIFI_IP         IPAddress(192,168,1,113)
-#define WIFI_GATEWAY    IPAddress(192,168,1,9)
-#define WIFI_SUBNET     IPAddress(255,255,255,0)
-#define WIFI_DNS        IPAddress(8,8,8,8)
+// #define WIFI_IP         IPAddress(192,168,88,13)
+// #define WIFI_GATEWAY    IPAddress(192,168,88,1)
+// #define WIFI_SUBNET     IPAddress(255,255,0,0)
+// #define WIFI_DNS        IPAddress(8,8,8,8)
 
 #define WIFI_RETRY_INTERVAL  5000
 #define WIFI_RESTART_TIMEOUT 300000

@@ -77,6 +77,9 @@ void mqttInit() {
 #ifdef ROLE_BASE
     client.setServer(MQTT_HOST, MQTT_PORT);
     client.setCallback(mqttCallback);
+
+    client.setKeepAlive(60);      // вместо 15 секунд
+    client.setBufferSize(512);    // для Home Assistant discovery
 #endif
 }
 
@@ -105,14 +108,15 @@ void mqttLoop() {
     if (!wifiConnected())
         return;
 
-    if (client.connected()) {
-        client.loop();
-        return;
-    }
+    if (!client.connected()) {
 
-    if (millis() - lastAttempt > MQTT_RETRY_INTERVAL) {
-        lastAttempt = millis();
-        mqttConnect();
+        if (millis() - lastAttempt > MQTT_RETRY_INTERVAL) {
+            lastAttempt = millis();
+            mqttConnect();
+        }
+
+    } else {
+        client.loop();   // ВАЖНО: всегда вызываем
     }
 
 #endif
