@@ -2,6 +2,7 @@
 #include <PubSubClient.h>
 #include "config.h"
 #include "wifi_manager.h"
+#include "lora_manager.h"
 
 static WiFiClient espClient;
 static PubSubClient client(espClient);
@@ -16,61 +17,68 @@ void mqttPublish(const char* topic, const char* payload, bool retained) {
 #endif
 }
 
-void sendDiscovery() {
+// void sendDiscovery() {
 
-    if (discoverySent) return;
+//     if (discoverySent) return;
 
-    const char* device =
-        "{\"identifiers\":[\"lora_base\"],"
-        "\"name\":\"LoRa Base\","
-        "\"model\":\"ESP32 LoRa Gateway\"}";
+//     const char* device =
+//         "{\"identifiers\":[\"lora_base\"],"
+//         "\"name\":\"LoRa Base\","
+//         "\"model\":\"ESP32 LoRa Gateway\"}";
 
-    mqttPublish(
-        "homeassistant/sensor/lora_base_temp/config",
-        "{\"name\":\"LoRa Base Temperature\","
-        "\"state_topic\":\"lora/base/temperature\","
-        "\"unit_of_measurement\":\"°C\","
-        "\"device_class\":\"temperature\","
-        "\"unique_id\":\"lora_base_temp\","
-        "\"device\":"
-        "{\"identifiers\":[\"lora_base\"]}"
-        "}",
-        true);
+//     mqttPublish(
+//         "homeassistant/sensor/lora_base_temp/config",
+//         "{\"name\":\"LoRa Base Temperature\","
+//         "\"state_topic\":\"lora/base/temperature\","
+//         "\"unit_of_measurement\":\"°C\","
+//         "\"device_class\":\"temperature\","
+//         "\"unique_id\":\"lora_base_temp\","
+//         "\"device\":"
+//         "{\"identifiers\":[\"lora_base\"]}"
+//         "}",
+//         true);
 
-    mqttPublish(
-        "homeassistant/sensor/lora_base_humidity/config",
-        "{\"name\":\"LoRa Base Humidity\","
-        "\"state_topic\":\"lora/base/humidity\","
-        "\"unit_of_measurement\":\"%\","
-        "\"device_class\":\"humidity\","
-        "\"unique_id\":\"lora_base_humidity\","
-        "\"device\":{\"identifiers\":[\"lora_base\"]}}",
-        true);
+//     mqttPublish(
+//         "homeassistant/sensor/lora_base_humidity/config",
+//         "{\"name\":\"LoRa Base Humidity\","
+//         "\"state_topic\":\"lora/base/humidity\","
+//         "\"unit_of_measurement\":\"%\","
+//         "\"device_class\":\"humidity\","
+//         "\"unique_id\":\"lora_base_humidity\","
+//         "\"device\":{\"identifiers\":[\"lora_base\"]}}",
+//         true);
 
-    mqttPublish(
-        "homeassistant/sensor/lora_base_pressure/config",
-        "{\"name\":\"LoRa Base Pressure\","
-        "\"state_topic\":\"lora/base/pressure\","
-        "\"unit_of_measurement\":\"hPa\","
-        "\"device_class\":\"pressure\","
-        "\"unique_id\":\"lora_base_pressure\","
-        "\"device\":{\"identifiers\":[\"lora_base\"]}}",
-        true);
+//     mqttPublish(
+//         "homeassistant/sensor/lora_base_pressure/config",
+//         "{\"name\":\"LoRa Base Pressure\","
+//         "\"state_topic\":\"lora/base/pressure\","
+//         "\"unit_of_measurement\":\"hPa\","
+//         "\"device_class\":\"pressure\","
+//         "\"unique_id\":\"lora_base_pressure\","
+//         "\"device\":{\"identifiers\":[\"lora_base\"]}}",
+//         true);
 
-    mqttPublish(
-        "homeassistant/sensor/lora_base_wifi_rssi/config",
-        "{\"name\":\"LoRa Base WiFi RSSI\","
-        "\"state_topic\":\"lora/base/wifi_rssi\","
-        "\"unit_of_measurement\":\"dBm\","
-        "\"unique_id\":\"lora_base_wifi_rssi\","
-        "\"device\":{\"identifiers\":[\"lora_base\"]}}",
-        true);
+//     mqttPublish(
+//         "homeassistant/sensor/lora_base_wifi_rssi/config",
+//         "{\"name\":\"LoRa Base WiFi RSSI\","
+//         "\"state_topic\":\"lora/base/wifi_rssi\","
+//         "\"unit_of_measurement\":\"dBm\","
+//         "\"unique_id\":\"lora_base_wifi_rssi\","
+//         "\"device\":{\"identifiers\":[\"lora_base\"]}}",
+//         true);
 
-    discoverySent = true;
-}
+//     discoverySent = true;
+// }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-    // пока только лог
+
+    String msg;
+    for (int i = 0; i < length; i++) msg += (char)payload[i];
+
+    if (String(topic).startsWith("lora/node_")) {
+        int node = atoi(topic + 10);
+        sendCommand(node, 1, msg.toInt());
+    }
 }
 
 void mqttInit() {
@@ -97,7 +105,7 @@ static void mqttConnect() {
         client.publish("lora/base/status", "online", true);
         client.subscribe("lora/+/cmd");
 
-        sendDiscovery();
+        // sendDiscovery();
     }
 }
 

@@ -1,2 +1,3 @@
 #pragma once
-void systemLoop();
+void baseLoop();
+void nodeLoop();

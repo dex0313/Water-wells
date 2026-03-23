@@ -1,6 +1,11 @@
 #pragma once
 #include <IPAddress.h>
 
+
+#define NODE_ID 15
+#define BASE_ID 0
+
+//Wifi
 #define WIFI_SSID       "Wifi"
 #define WIFI_PASSWORD   ""
 
@@ -14,6 +19,7 @@
 #define WIFI_RETRY_INTERVAL  5000
 #define WIFI_RESTART_TIMEOUT 300000
 
+//MQTT
 #define MQTT_HOST "192.168.1.215"
 #define MQTT_PORT 1883
 
@@ -22,3 +28,10 @@
 #define MQTT_PASS "moloko12"
 
 #define MQTT_RETRY_INTERVAL 5000
+
+//LoRa pins
+// #define LORA_RX 16
+// #define LORA_TX 17
+// #define LORA_AUX 4
+// #define LORA_M0 18
+// #define LORA_M1 5
