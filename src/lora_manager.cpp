@@ -202,6 +202,13 @@ void loraLoop() {
 
             if (pkt.type == PKT_DATA) {
 
+                static bool discovered[256] = {false};
+
+                if (!discovered[pkt.source]) {
+                    publishDiscovery(pkt.source);
+                    discovered[pkt.source] = true;
+                }
+
                 DataPayload data;
                 memcpy(&data, pkt.payload, sizeof(data));
 
@@ -233,8 +240,32 @@ void loraLoop() {
             if (pkt.type == PKT_CMD && pkt.destination == NODE_ID) {
 
                 if (pkt.payload[0] == 1) {
-                    digitalWrite(25, pkt.payload[1]);
-                    Serial.println("Relay command received");
+
+                    uint8_t value = pkt.payload[1];
+
+                    if (value == 1) {
+                        digitalWrite(RELAY_PIN, RELAY_ON);
+                        Serial.println("Relay ON");
+                    } else {
+                        digitalWrite(RELAY_PIN, RELAY_OFF);
+                        Serial.println("Relay OFF");
+                    }
+
+                    Serial.println("Relay changed");
+
+                    // --- ВАЖНО: правильное логическое состояние ---
+                    uint8_t relay_state = (digitalRead(RELAY_PIN) == RELAY_ON) ? 1 : 0;
+
+                    Serial.print("GPIO state: ");
+                    Serial.println(digitalRead(RELAY_PIN));
+
+                    Serial.printf("Logical relay state: %d\n", relay_state);
+
+                    // --- ВАЖНО: сразу отправляем обновлённое состояние ---
+                    float t = 0, h = 0, p = 0; // можно не заполнять, если не нужно
+                    uint16_t motor = 0;
+
+                    sendData(t, h, p, relay_state, motor);
                 }
             }
 

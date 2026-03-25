@@ -6,6 +6,8 @@
 #ifdef ROLE_NODE
     #define RELAY_PIN 15
     #define MOTOR_PIN 2
+    #define RELAY_ON  LOW
+    #define RELAY_OFF HIGH
 #endif
 
 static Adafruit_BME280 bme;
@@ -16,6 +18,7 @@ void sensorInit() {
     bme.begin(0x76);
     
 #ifdef ROLE_NODE
+    digitalWrite(RELAY_PIN, HIGH);
     pinMode(RELAY_PIN, OUTPUT);
 #endif
 }

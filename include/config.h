@@ -35,3 +35,7 @@
 // #define LORA_AUX 4
 // #define LORA_M0 18
 // #define LORA_M1 5
+
+#define RELAY_PIN 15
+#define RELAY_ON  LOW
+#define RELAY_OFF HIGH
