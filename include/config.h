@@ -5,10 +5,6 @@
 #define NODE_ID 15
 #define BASE_ID 0
 
-//Wifi
-#define WIFI_SSID       "Wifi"
-#define WIFI_PASSWORD   ""
-
 // #define WIFI_STATIC_IP  true
 
 // #define WIFI_IP         IPAddress(192,168,88,13)
