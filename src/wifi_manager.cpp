@@ -1,5 +1,6 @@
 #include "wifi_manager.h"
 #include "config.h"
+#include <WiFi.h>
 
 static unsigned long lastAttempt = 0;
 static unsigned long disconnectTime = 0;
@@ -9,12 +10,14 @@ void wifiInit() {
 
 #ifdef ROLE_BASE
     WiFi.mode(WIFI_STA);
+    WiFi.persistent(false);
 
 // #if WIFI_STATIC_IP
 //     WiFi.config(WIFI_IP, WIFI_GATEWAY, WIFI_SUBNET, WIFI_DNS);
 // #endif
 
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.println("WiFi init done");
 #endif
 }
 
@@ -45,11 +48,13 @@ void wifiLoop() {
     if (millis() - lastAttempt > WIFI_RETRY_INTERVAL) {
         lastAttempt = millis();
         WiFi.disconnect();
+        delay(100);
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     }
 
     if (disconnectTime > 0 &&
         millis() - disconnectTime > WIFI_RESTART_TIMEOUT) {
+            Serial.println("[WiFi] Restart timeout - rebooting");
         ESP.restart();
     }
 

@@ -7,13 +7,17 @@
 
 void setup() {
     Serial.begin(115200);
-
+    delay(500);
+    Serial.println("=== Water Wells System ===");
     loraInit();
     sensorInit();
 
 #ifdef ROLE_BASE
+    Serial.println("Role: BASE");
     wifiInit();
     mqttInit();
+#else
+    Serial.println("Role: NODE");
 #endif
 }
 
@@ -24,5 +28,4 @@ void loop() {
 #else
     nodeLoop();
 #endif
-
 }
