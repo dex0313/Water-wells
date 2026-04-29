@@ -50,3 +50,33 @@
 #define LORA_MODE_SLEEP 1
 #define LORA_MODE_WAKEUP 2
 #define LORA_MODE_POWER 3
+
+// ============================================================
+// ACK (Acknowledgment) Configuration
+// ============================================================
+
+// Time to wait for ACK response from NODE (milliseconds)
+#define ACK_TIMEOUT_MS      2000
+
+// Maximum number of retry attempts for unacknowledged commands
+#define ACK_MAX_RETRIES     3
+
+// Delay between retry attempts (milliseconds)
+#define ACK_RETRY_DELAY_MS  1000
+
+// How often to check pending ACKs and process retries (milliseconds)
+#define ACK_CHECK_INTERVAL  500
+
+// ============================================================
+// Heartbeat / Online Detection Configuration
+// ============================================================
+
+// How often BASE checks node online status (milliseconds)
+#define HEARTBEAT_CHECK_INTERVAL  30000
+
+// If no packet received from node within this time, it's OFFLINE (milliseconds)
+// Should be at least 3x SENSOR_INTERVAL to avoid false positives
+#define HEARTBEAT_OFFLINE_TIMEOUT 180000  // 3 minutes
+
+// Maximum number of nodes to track (node IDs 0..255, we allocate this many slots)
+#define MAX_TRACKED_NODES  32

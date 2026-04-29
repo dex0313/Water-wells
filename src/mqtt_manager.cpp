@@ -204,7 +204,51 @@ void publishDiscovery(uint16_t node_id) {
     );
     mqttPublish(topic, payload, true);
 
-    Serial.printf("[MQTT] Discovery published for %s\n", device_id);
+    // --- ONLINE STATUS (connectivity binary sensor) ---
+    snprintf(topic, sizeof(topic),
+        "homeassistant/binary_sensor/%s_online/config", device_id);
+
+    snprintf(payload, sizeof(payload),
+        "{"
+        "\"name\":\"%s Online\","
+        "\"state_topic\":\"lora/%s/online\","
+        "\"payload_on\":\"1\","
+        "\"payload_off\":\"0\","
+        "\"device_class\":\"connectivity\","
+        "\"unique_id\":\"%s_online\","
+        "\"device\":{"
+            "\"identifiers\":[\"%s\"],"
+            "\"name\":\"%s\","
+            "\"model\":\"ESP32 LoRa Node\","
+            "\"manufacturer\":\"DIY\""
+        "}"
+        "}",
+        device_name, device_id, device_id, device_id, device_name
+    );
+    mqttPublish(topic, payload, true);
+
+    // --- COMMAND STATUS (ACK result sensor) ---
+    snprintf(topic, sizeof(topic),
+        "homeassistant/sensor/%s_cmd_status/config", device_id);
+
+    snprintf(payload, sizeof(payload),
+        "{"
+        "\"name\":\"%s Command Status\","
+        "\"state_topic\":\"lora/%s/cmd_status\","
+        "\"icon\":\"mdi:check-circle\","
+        "\"unique_id\":\"%s_cmd_status\","
+        "\"device\":{"
+            "\"identifiers\":[\"%s\"],"
+            "\"name\":\"%s\","
+            "\"model\":\"ESP32 LoRa Node\","
+            "\"manufacturer\":\"DIY\""
+        "}"
+        "}",
+        device_name, device_id, device_id, device_id, device_name
+    );
+    mqttPublish(topic, payload, true);
+
+    Serial.printf("[MQTT] Discovery published for %s (with Online + CmdStatus)\n", device_id);
 #endif
 }
 
@@ -230,8 +274,11 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
         if (idEnd > idStart) {
             int node = t.substring(idStart, idEnd).toInt();
             uint8_t value = (msg == "1") ? 1 : 0;
-            sendCommand(node, 1, value);
-            Serial.printf("[MQTT] Send command to node %d: %d\n", node, value);
+
+            //sendCommand(node, 1, value);
+            sendCommandWithAck(node, 1, value);
+            //Serial.printf("[MQTT] Send command to node %d: %d\n", node, value);
+            Serial.printf("[MQTT] Send command (with ACK) to node %d: %d\n", node, value);
         }
     }
 #endif
