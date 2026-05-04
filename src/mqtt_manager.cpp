@@ -340,6 +340,10 @@ static void mqttConnect() {
         // Re-send discovery on every reconnection
         // so that Home Assistant re-registers devices
         sendBaseDiscovery();
+
+        // Re-publish all node online/offline statuses
+        // to ensure HA has the current state (not stale retained values)
+        loraPublishAllNodeStatuses();
     } else {
         Serial.printf("[MQTT] Connect failed, rc=%d\n", client.state());
     }

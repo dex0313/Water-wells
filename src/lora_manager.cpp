@@ -141,8 +141,25 @@ static NodeInfo nodeInfo[256] = {};  // Track up to 256 node IDs
 
 void loraUpdateNodeSeen(uint16_t node_id) {
     if (node_id < 256) {
+        bool first_seen = !nodeInfo[node_id].ever_seen;
+        bool was_offline = !first_seen && !nodeInfo[node_id].is_online;
+
         nodeInfo[node_id].last_seen_ms = millis();
         nodeInfo[node_id].ever_seen = true;
+        nodeInfo[node_id].is_online = true;
+
+        // Publish "1" on any transition to online
+        // (first time seen, or returning from offline)
+        if (first_seen || was_offline) {
+            char topic[64];
+            snprintf(topic, sizeof(topic), "lora/node_%d/online", node_id);
+            mqttPublish(topic, "1", true);
+            if (first_seen) {
+                Serial.printf("[Heartbeat] Node %d -> FIRST SEEN (online)\n", node_id);
+            } else {
+                Serial.printf("[Heartbeat] Node %d -> ONLINE (packet received)\n", node_id);
+            }
+        }
     }
 }
 
@@ -254,9 +271,14 @@ void loraInit() {
     Serial.println("LoRa init done");
 
     // Initialize node tracking
+    // IMPORTANT: is_online = false on startup ensures that after BASE
+    // restart, all nodes are considered OFFLINE until they send data.
+    // This prevents stale retained "1" MQTT messages from keeping
+    // nodes appearing online when they are not.
     for (uint16_t i = 0; i < 256; i++) {
         nodeInfo[i].last_seen_ms = 0;
         nodeInfo[i].ever_seen = false;
+        nodeInfo[i].is_online = false;
     }
 
     // Initialize pending commands
@@ -444,10 +466,10 @@ void loraLoop() {
                     snprintf(buf, sizeof(buf), "%d", data.motor);
                     mqttPublish(topic, buf, true);
 
-                    // Publish online status
-                    snprintf(topic, sizeof(topic),
-                             "lora/node_%d/online", pkt.source);
-                    mqttPublish(topic, "1", true);
+                    // Note: online status transition is handled by
+                    // loraUpdateNodeSeen() called above — it publishes
+                    // "1" when a node transitions from offline to online.
+                    // First-time nodes are published online below.
                 } else {
                     Serial.printf("[LoRa] Payload too small: %d bytes\n",
                                   pkt.payload_size);
@@ -458,7 +480,7 @@ void loraLoop() {
             else if (pkt.type == PKT_ACK) {
                 Serial.printf("[LoRa] RX ACK from node %d\n", pkt.source);
 
-                // Update node heartbeat
+                // Update node heartbeat (also handles online transition publish)
                 loraUpdateNodeSeen(pkt.source);
 
                 if (pkt.payload_size >= sizeof(AckPayload)) {
@@ -549,16 +571,46 @@ void loraCheckHeartbeat() {
     for (uint16_t nodeId = 0; nodeId < 256; nodeId++) {
         if (!nodeInfo[nodeId].ever_seen) continue;
 
-        bool was_online = (millis() - nodeInfo[nodeId].last_seen_ms) < HEARTBEAT_OFFLINE_TIMEOUT;
+        bool now_online = (millis() - nodeInfo[nodeId].last_seen_ms) < HEARTBEAT_OFFLINE_TIMEOUT;
 
-        if (!was_online) {
+        // Only publish on state TRANSITION (avoids MQTT spam)
+        if (now_online != nodeInfo[nodeId].is_online) {
+            nodeInfo[nodeId].is_online = now_online;
+
             char topic[64];
             snprintf(topic, sizeof(topic), "lora/node_%d/online", nodeId);
-            mqttPublish(topic, "0", true);
 
-            Serial.printf("[Heartbeat] Node %d is OFFLINE (last seen %lu ms ago)\n",
-                          nodeId, millis() - nodeInfo[nodeId].last_seen_ms);
+            if (now_online) {
+                mqttPublish(topic, "1", true);
+                Serial.printf("[Heartbeat] Node %d -> ONLINE\n", nodeId);
+            } else {
+                mqttPublish(topic, "0", true);
+                Serial.printf("[Heartbeat] Node %d -> OFFLINE (last seen %lu ms ago)\n",
+                              nodeId, millis() - nodeInfo[nodeId].last_seen_ms);
+            }
         }
     }
+#endif
+}
+
+// ============================================================
+// Re-publish all node statuses (called after MQTT reconnect)
+// ============================================================
+
+void loraPublishAllNodeStatuses() {
+#ifdef ROLE_BASE
+    for (uint16_t nodeId = 0; nodeId < 256; nodeId++) {
+        if (!nodeInfo[nodeId].ever_seen) continue;
+
+        char topic[64];
+        snprintf(topic, sizeof(topic), "lora/node_%d/online", nodeId);
+
+        if (nodeInfo[nodeId].is_online) {
+            mqttPublish(topic, "1", true);
+        } else {
+            mqttPublish(topic, "0", true);
+        }
+    }
+    Serial.println("[Heartbeat] Re-published all node online statuses");
 #endif
 }

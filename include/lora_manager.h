@@ -8,6 +8,7 @@
 struct NodeInfo {
     uint32_t last_seen_ms;    // millis() when last packet was received
     bool     ever_seen;       // Whether this node has ever been seen
+    bool     is_online;       // Current online state (tracks transitions)
 };
 
 // ============================================================
@@ -79,7 +80,13 @@ void loraUpdateNodeSeen(uint16_t node_id);
 
 /**
  * Check all tracked nodes for online/offline status transitions.
- * Publishes state changes via MQTT.
+ * Publishes state changes via MQTT only when status actually changes.
  * Must be called periodically from the main loop.
  */
 void loraCheckHeartbeat();
+
+/**
+ * Re-publish online/offline status for all ever-seen nodes.
+ * Should be called after MQTT reconnect to ensure HA has current state.
+ */
+void loraPublishAllNodeStatuses();
