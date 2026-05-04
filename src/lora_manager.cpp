@@ -30,7 +30,8 @@ struct DataPayload {
     float h;
     float p;
     uint8_t relay;
-    uint8_t motor;
+    float voltage;   // ZMPT101B RMS voltage (replaces old uint8_t motor)
+    uint8_t motor;   // Derived motor state: 1 = voltage above threshold, 0 = below
 };
 #pragma pack(pop)
 
@@ -268,7 +269,7 @@ void loraInit() {
 // Send data (from node to base)
 // ============================================================
 
-void sendData(float t, float h, float p, uint8_t relay, uint8_t motor) {
+void sendData(float t, float h, float p, uint8_t relay, float voltage, uint8_t motor) {
 #ifndef ROLE_BASE
     MeshPacket pkt{};
     pkt.version = 1;
@@ -281,6 +282,7 @@ void sendData(float t, float h, float p, uint8_t relay, uint8_t motor) {
     payload.h     = h;
     payload.p     = p;
     payload.relay = relay;
+    payload.voltage = voltage;
     payload.motor = motor;
 
     memcpy(pkt.payload, &payload, sizeof(payload));
@@ -430,6 +432,13 @@ void loraLoop() {
                     snprintf(buf, sizeof(buf), "%d", data.relay);
                     mqttPublish(topic, buf, true);
 
+                    // Voltage from ZMPT101B
+                    snprintf(topic, sizeof(topic),
+                             "lora/node_%d/voltage", pkt.source);
+                    dtostrf(data.voltage, 1, 1, buf);
+                    mqttPublish(topic, buf, true);
+
+                    // Motor binary state (derived from voltage)
                     snprintf(topic, sizeof(topic),
                              "lora/node_%d/motor", pkt.source);
                     snprintf(buf, sizeof(buf), "%d", data.motor);
@@ -511,6 +520,7 @@ void loraLoop() {
 
                     // Also send back full sensor data (same as before)
                     float t = 0, h = 0, p = 0;
+                    float voltage = 0;
                     uint8_t motor_state = 0;
 
                     if (sensorAvailable()) {
@@ -518,10 +528,10 @@ void loraLoop() {
                         h = bme.readHumidity();
                         p = bme.readPressure() / 100.0F;
                     }
+                    voltage = readZMPT101B();
+                    motor_state = (voltage > MOTOR_VOLTAGE_THRESHOLD) ? 1 : 0;
 
-                    motor_state = (analogRead(MOTOR_PIN) > MOTOR_THRESHOLD) ? 1 : 0;
-
-                    sendData(t, h, p, relay_state, motor_state);
+                    sendData(t, h, p, relay_state, voltage, motor_state);
                 }
             }
 

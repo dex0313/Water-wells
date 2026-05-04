@@ -158,7 +158,29 @@ void publishDiscovery(uint16_t node_id) {
     );
     mqttPublish(topic, payload, true);
 
-    // --- MOTOR SENSOR ---
+    // --- VOLTAGE SENSOR (ZMPT101B) ---
+    snprintf(topic, sizeof(topic),
+        "homeassistant/sensor/%s_voltage/config", device_id);
+
+    snprintf(payload, sizeof(payload),
+        "{"
+        "\"name\":\"%s Voltage\","
+        "\"state_topic\":\"lora/%s/voltage\","
+        "\"unit_of_measurement\":\"V\","
+        "\"device_class\":\"voltage\","
+        "\"unique_id\":\"%s_voltage\","
+        "\"device\":{"
+            "\"identifiers\":[\"%s\"],"
+            "\"name\":\"%s\","
+            "\"model\":\"ESP32 LoRa Node\","
+            "\"manufacturer\":\"DIY\""
+        "}"
+        "}",
+        device_name, device_id, device_id, device_id, device_name
+    );
+    mqttPublish(topic, payload, true);
+
+    // --- MOTOR BINARY SENSOR (derived from voltage) ---
     snprintf(topic, sizeof(topic),
         "homeassistant/binary_sensor/%s_motor/config", device_id);
 

@@ -26,9 +26,23 @@
 #define RELAY_ON  LOW
 #define RELAY_OFF HIGH
 
+// ZMPT101B Voltage Sensor
+#define ZMPT101B_PIN         25     // ADC pin connected to ZMPT101B output
+#define ZMPT101B_CALIBRATION 470.35  // Calibration factor — MUST be adjusted for your module!
+                                   // How to calibrate:
+                                   // 1. Apply known voltage (e.g. 220V) to ZMPT101B
+                                   // 2. Read raw RMS from serial log: "[ZMPT101B] raw_rms=XXX"
+                                   // 3. CALIBRATION = actual_voltage / raw_rms
+                                   // Example: if raw_rms=450 and actual=220V, then CALIBRATION=0.489
+#define ZMPT101B_SAMPLE_MS   40    // Sampling window in ms (2 full cycles at 50Hz)
+#define ZMPT101B_ZERO_THRESHOLD 5.0 // Voltage below this is considered 0V (noise floor)
+
+// Motor (derived from ZMPT101B voltage)
+#define MOTOR_VOLTAGE_THRESHOLD 100.0  // Voltage above this means motor is ON
+
 // Motor
-#define MOTOR_PIN 25
-#define MOTOR_THRESHOLD 2000
+//#define MOTOR_PIN 25
+//#define MOTOR_THRESHOLD 2000
 
 // Sensor
 #define SENSOR_INTERVAL 60000
