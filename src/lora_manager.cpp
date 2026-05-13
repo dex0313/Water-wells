@@ -24,23 +24,30 @@ struct MeshPacket {
 };
 #pragma pack(pop)
 
+// Data payload: BME280 + N relays + N voltage sensors
+// num_relays/num_sensors tell the receiver how many entries are valid.
+// relay_states and motor_states are bitmasks (bit 0 = channel 0, etc.)
+// voltage[] contains RMS voltage for each ZMPT101B channel.
 #pragma pack(push,1)
 struct DataPayload {
-    float t;
-    float h;
-    float p;
-    uint8_t relay;
-    float voltage;   // ZMPT101B RMS voltage (replaces old uint8_t motor)
-    uint8_t motor;   // Derived motor state: 1 = voltage above threshold, 0 = below
+    float t;                              // BME280 temperature
+    float h;                              // BME280 humidity
+    float p;                              // BME280 pressure
+    uint8_t num_relays;                   // Number of relays on this node
+    uint8_t num_sensors;                  // Number of ZMPT101B sensors
+    uint8_t relay_states;                 // Bitmask: bit N = relay N state
+    uint8_t motor_states;                 // Bitmask: bit N = motor N state
+    float voltage[MAX_SENSORS_PER_NODE];  // RMS voltage per channel
 };
 #pragma pack(pop)
 
 // ACK payload structure (sent from NODE back to BASE)
 #pragma pack(push,1)
 struct AckPayload {
-    uint8_t cmd;       // Original command that was acknowledged (1 = relay)
-    uint8_t result;    // Result: 1 = success, 0 = failure
-    uint8_t state;     // Current state after command (relay: 0 or 1)
+    uint8_t cmd;          // Original command type (1 = relay)
+    uint8_t relay_index;  // Which relay was addressed
+    uint8_t result;       // Result: 1 = success, 0 = failure
+    uint8_t state;        // Current state of that relay after command
 };
 #pragma pack(pop)
 
@@ -81,26 +88,21 @@ static void setMode(uint8_t mode) {
             digitalWrite(LORA_M0, LOW);
             digitalWrite(LORA_M1, LOW);
             break;
-
         case LORA_MODE_WAKEUP:
             digitalWrite(LORA_M0, HIGH);
             digitalWrite(LORA_M1, LOW);
             break;
-
         case LORA_MODE_POWER:
             digitalWrite(LORA_M0, LOW);
             digitalWrite(LORA_M1, HIGH);
             break;
-
         case LORA_MODE_SLEEP:
             digitalWrite(LORA_M0, HIGH);
             digitalWrite(LORA_M1, HIGH);
             break;
-
         default:
             return;
     }
-
     delay(50);
     waitAux();
 }
@@ -137,7 +139,7 @@ static void sendPacket(MeshPacket& pkt) {
 // Per-Node Tracking (Heartbeat)
 // ============================================================
 
-static NodeInfo nodeInfo[256] = {};  // Track up to 256 node IDs
+static NodeInfo nodeInfo[256] = {};
 
 void loraUpdateNodeSeen(uint16_t node_id) {
     if (node_id < 256) {
@@ -149,7 +151,6 @@ void loraUpdateNodeSeen(uint16_t node_id) {
         nodeInfo[node_id].is_online = true;
 
         // Publish "1" on any transition to online
-        // (first time seen, or returning from offline)
         if (first_seen || was_offline) {
             char topic[64];
             snprintf(topic, sizeof(topic), "lora/node_%d/online", node_id);
@@ -177,7 +178,7 @@ bool loraIsNodeOnline(uint16_t node_id) {
 static PendingCommand pendingCmds[MAX_PENDING_COMMANDS] = {};
 static unsigned long lastAckCheck = 0;
 
-void sendCommandWithAck(uint16_t node, uint8_t cmd, uint8_t value) {
+void sendCommandWithAck(uint16_t node, uint8_t cmd, uint8_t relay_index, uint8_t value) {
 #ifdef ROLE_BASE
     // Find a free slot in the pending commands array
     int8_t slot = -1;
@@ -190,7 +191,6 @@ void sendCommandWithAck(uint16_t node, uint8_t cmd, uint8_t value) {
 
     if (slot < 0) {
         Serial.println("[ACK] No free pending slot! Dropping command.");
-        // Report failure to MQTT
         char topic[64];
         snprintf(topic, sizeof(topic), "lora/node_%d/cmd_status", node);
         mqttPublish(topic, "failed:no_slot", true);
@@ -200,16 +200,17 @@ void sendCommandWithAck(uint16_t node, uint8_t cmd, uint8_t value) {
     // Store the pending command
     pendingCmds[slot].node_id = node;
     pendingCmds[slot].cmd = cmd;
+    pendingCmds[slot].relay_index = relay_index;
     pendingCmds[slot].value = value;
     pendingCmds[slot].retries_left = ACK_MAX_RETRIES;
     pendingCmds[slot].active = true;
     pendingCmds[slot].sent_at_ms = millis();
 
     // Send the command immediately
-    sendCommand(node, cmd, value);
+    sendCommand(node, cmd, relay_index, value);
 
-    Serial.printf("[ACK] Command queued: node=%d cmd=%d val=%d (slot %d, %d retries left)\n",
-                  node, cmd, value, slot, ACK_MAX_RETRIES);
+    Serial.printf("[ACK] Command queued: node=%d cmd=%d relay=%d val=%d (slot %d)\n",
+                  node, cmd, relay_index, value, slot);
 #endif
 }
 
@@ -224,28 +225,25 @@ void loraProcessPendingAcks() {
         PendingCommand& pc = pendingCmds[i];
         uint32_t elapsed = millis() - pc.sent_at_ms;
 
-        // Check if timeout has elapsed
         if (elapsed < ACK_TIMEOUT_MS) continue;
 
         if (pc.retries_left > 0) {
-            // Retry: resend the command
             pc.retries_left--;
             pc.sent_at_ms = millis();
 
-            Serial.printf("[ACK] Timeout! Retrying node=%d (retries left=%d)\n",
-                          pc.node_id, pc.retries_left);
+            Serial.printf("[ACK] Timeout! Retrying node=%d relay=%d (retries left=%d)\n",
+                          pc.node_id, pc.relay_index, pc.retries_left);
 
-            sendCommand(pc.node_id, pc.cmd, pc.value);
+            sendCommand(pc.node_id, pc.cmd, pc.relay_index, pc.value);
         } else {
-            // All retries exhausted — report failure
-            Serial.printf("[ACK] FAILED: node=%d cmd=%d — all retries exhausted\n",
-                          pc.node_id, pc.cmd);
+            Serial.printf("[ACK] FAILED: node=%d cmd=%d relay=%d — all retries exhausted\n",
+                          pc.node_id, pc.cmd, pc.relay_index);
 
             char topic[64];
             snprintf(topic, sizeof(topic), "lora/node_%d/cmd_status", pc.node_id);
             mqttPublish(topic, "failed:no_ack", true);
 
-            pc.active = false;  // Free the slot
+            pc.active = false;
         }
     }
 #endif
@@ -256,7 +254,6 @@ void loraProcessPendingAcks() {
 // ============================================================
 
 void loraInit() {
-
     pinMode(LORA_AUX, INPUT);
     pinMode(LORA_M0, OUTPUT);
     pinMode(LORA_M1, OUTPUT);
@@ -271,14 +268,12 @@ void loraInit() {
     Serial.println("LoRa init done");
 
     // Initialize node tracking
-    // IMPORTANT: is_online = false on startup ensures that after BASE
-    // restart, all nodes are considered OFFLINE until they send data.
-    // This prevents stale retained "1" MQTT messages from keeping
-    // nodes appearing online when they are not.
     for (uint16_t i = 0; i < 256; i++) {
         nodeInfo[i].last_seen_ms = 0;
         nodeInfo[i].ever_seen = false;
         nodeInfo[i].is_online = false;
+        nodeInfo[i].num_relays = 0;
+        nodeInfo[i].num_sensors = 0;
     }
 
     // Initialize pending commands
@@ -291,7 +286,10 @@ void loraInit() {
 // Send data (from node to base)
 // ============================================================
 
-void sendData(float t, float h, float p, uint8_t relay, float voltage, uint8_t motor) {
+void sendData(float t, float h, float p,
+              uint8_t num_relays, uint8_t num_sensors,
+              uint8_t relay_states, uint8_t motor_states,
+              const float voltages[]) {
 #ifndef ROLE_BASE
     MeshPacket pkt{};
     pkt.version = 1;
@@ -300,12 +298,18 @@ void sendData(float t, float h, float p, uint8_t relay, float voltage, uint8_t m
     pkt.destination = BASE_ID;
 
     DataPayload payload;
-    payload.t     = t;
-    payload.h     = h;
-    payload.p     = p;
-    payload.relay = relay;
-    payload.voltage = voltage;
-    payload.motor = motor;
+    payload.t = t;
+    payload.h = h;
+    payload.p = p;
+    payload.num_relays = num_relays;
+    payload.num_sensors = num_sensors;
+    payload.relay_states = relay_states;
+    payload.motor_states = motor_states;
+
+    // Fill voltage array (zero unused slots)
+    for (uint8_t i = 0; i < MAX_SENSORS_PER_NODE; i++) {
+        payload.voltage[i] = (i < num_sensors) ? voltages[i] : 0.0f;
+    }
 
     memcpy(pkt.payload, &payload, sizeof(payload));
     pkt.payload_size = sizeof(payload);
@@ -316,9 +320,10 @@ void sendData(float t, float h, float p, uint8_t relay, float voltage, uint8_t m
 
 // ============================================================
 // Send command (from base to node)
+// payload: [0]=cmd, [1]=relay_index, [2]=value
 // ============================================================
 
-void sendCommand(uint16_t node, uint8_t cmd, uint8_t value) {
+void sendCommand(uint16_t node, uint8_t cmd, uint8_t relay_index, uint8_t value) {
 #ifdef ROLE_BASE
     MeshPacket pkt{};
     pkt.version     = 1;
@@ -327,8 +332,9 @@ void sendCommand(uint16_t node, uint8_t cmd, uint8_t value) {
     pkt.destination = node;
 
     pkt.payload[0] = cmd;
-    pkt.payload[1] = value;
-    pkt.payload_size = 2;
+    pkt.payload[1] = relay_index;
+    pkt.payload[2] = value;
+    pkt.payload_size = 3;
 
     sendPacket(pkt);
 #endif
@@ -338,7 +344,8 @@ void sendCommand(uint16_t node, uint8_t cmd, uint8_t value) {
 // Send ACK (from node back to base)
 // ============================================================
 
-static void sendAck(uint16_t destination, uint8_t cmd, uint8_t result, uint8_t state) {
+static void sendAck(uint16_t destination, uint8_t cmd,
+                    uint8_t relay_index, uint8_t result, uint8_t state) {
 #ifndef ROLE_BASE
     MeshPacket pkt{};
     pkt.version     = 1;
@@ -347,16 +354,18 @@ static void sendAck(uint16_t destination, uint8_t cmd, uint8_t result, uint8_t s
     pkt.destination = destination;
 
     AckPayload ack;
-    ack.cmd    = cmd;
-    ack.result = result;
-    ack.state  = state;
+    ack.cmd         = cmd;
+    ack.relay_index = relay_index;
+    ack.result      = result;
+    ack.state       = state;
 
     memcpy(pkt.payload, &ack, sizeof(ack));
     pkt.payload_size = sizeof(ack);
 
     sendPacket(pkt);
 
-    Serial.printf("[NODE] ACK sent: cmd=%d result=%d state=%d\n", cmd, result, state);
+    Serial.printf("[NODE] ACK sent: cmd=%d relay=%d result=%d state=%d\n",
+                  cmd, relay_index, result, state);
 #endif
 }
 
@@ -364,16 +373,14 @@ static void sendAck(uint16_t destination, uint8_t cmd, uint8_t result, uint8_t s
 // RX loop with packet boundary detection
 // ============================================================
 
-// Fixed-size receive buffer
 static uint8_t rxBuffer[sizeof(MeshPacket)];
 static uint16_t rxIndex = 0;
 static unsigned long rxStartTime = 0;
-static constexpr uint32_t RX_TIMEOUT_MS = 500; // timeout to reset stale partial packet
+static constexpr uint32_t RX_TIMEOUT_MS = 500;
 
 void loraLoop() {
     while (loraSerial.available()) {
 
-        // Reset buffer if we started receiving but timed out
         if (rxIndex > 0 && (millis() - rxStartTime > RX_TIMEOUT_MS)) {
             Serial.println("[LoRa] RX timeout - resetting buffer");
             rxIndex = 0;
@@ -386,7 +393,7 @@ void loraLoop() {
         }
 
         if (rxIndex >= sizeof(MeshPacket)) {
-            rxIndex = 0; // always reset after consuming a full frame
+            rxIndex = 0;
 
             MeshPacket pkt;
             memcpy(&pkt, rxBuffer, sizeof(pkt));
@@ -412,7 +419,6 @@ void loraLoop() {
 #ifdef ROLE_BASE
 
             if (pkt.type == PKT_DATA) {
-                // Update node heartbeat
                 loraUpdateNodeSeen(pkt.source);
 
                 Serial.printf("[LoRa] RX data from node %d\n", pkt.source);
@@ -421,11 +427,22 @@ void loraLoop() {
                 static bool discovered[256] = {false};
 
                 if (pkt.source < 256 && !discovered[pkt.source]) {
-                    publishDiscovery(pkt.source);
+                    // Need to parse num_relays/num_sensors before discovery
+                    // to create the correct number of HA entities
+                    if (pkt.payload_size >= 14) {  // At least up to num_sensors
+                        DataPayload data;
+                        memcpy(&data, pkt.payload, sizeof(data));
+
+                        // Store node profile for future reference
+                        nodeInfo[pkt.source].num_relays = data.num_relays;
+                        nodeInfo[pkt.source].num_sensors = data.num_sensors;
+
+                        publishDiscovery(pkt.source, data.num_relays, data.num_sensors);
+                    } else {
+                        // Fallback: discovery with defaults
+                        publishDiscovery(pkt.source, 1, 1);
+                    }
                     discovered[pkt.source] = true;
-                } else if (pkt.source >= 256) {
-                    Serial.printf("[LoRa] Node ID %d exceeds discovery array\n",
-                                  pkt.source);
                 }
 
                 if (pkt.payload_size >= sizeof(DataPayload)) {
@@ -434,6 +451,7 @@ void loraLoop() {
 
                     char topic[64], buf[32];
 
+                    // BME280
                     snprintf(topic, sizeof(topic),
                              "lora/node_%d/temperature", pkt.source);
                     dtostrf(data.t, 1, 2, buf);
@@ -449,56 +467,56 @@ void loraLoop() {
                     dtostrf(data.p, 1, 2, buf);
                     mqttPublish(topic, buf, true);
 
-                    snprintf(topic, sizeof(topic),
-                             "lora/node_%d/relay", pkt.source);
-                    snprintf(buf, sizeof(buf), "%d", data.relay);
-                    mqttPublish(topic, buf, true);
+                    // Relays (individual topics with bitmask)
+                    for (uint8_t i = 0; i < data.num_relays; i++) {
+                        snprintf(topic, sizeof(topic),
+                                 "lora/node_%d/relay_%d", pkt.source, i + 1);
+                        snprintf(buf, sizeof(buf), "%d", (data.relay_states >> i) & 1);
+                        mqttPublish(topic, buf, true);
+                    }
 
-                    // Voltage from ZMPT101B
-                    snprintf(topic, sizeof(topic),
-                             "lora/node_%d/voltage", pkt.source);
-                    dtostrf(data.voltage, 1, 1, buf);
-                    mqttPublish(topic, buf, true);
+                    // Voltages (individual topics)
+                    for (uint8_t i = 0; i < data.num_sensors; i++) {
+                        snprintf(topic, sizeof(topic),
+                                 "lora/node_%d/voltage_%d", pkt.source, i + 1);
+                        dtostrf(data.voltage[i], 1, 1, buf);
+                        mqttPublish(topic, buf, true);
+                    }
 
-                    // Motor binary state (derived from voltage)
-                    snprintf(topic, sizeof(topic),
-                             "lora/node_%d/motor", pkt.source);
-                    snprintf(buf, sizeof(buf), "%d", data.motor);
-                    mqttPublish(topic, buf, true);
-
-                    // Note: online status transition is handled by
-                    // loraUpdateNodeSeen() called above — it publishes
-                    // "1" when a node transitions from offline to online.
-                    // First-time nodes are published online below.
+                    // Motors (individual binary states derived from voltage)
+                    for (uint8_t i = 0; i < data.num_sensors; i++) {
+                        snprintf(topic, sizeof(topic),
+                                 "lora/node_%d/motor_%d", pkt.source, i + 1);
+                        snprintf(buf, sizeof(buf), "%d", (data.motor_states >> i) & 1);
+                        mqttPublish(topic, buf, true);
+                    }
                 } else {
-                    Serial.printf("[LoRa] Payload too small: %d bytes\n",
-                                  pkt.payload_size);
+                    Serial.printf("[LoRa] Payload too small: %d bytes (need %d)\n",
+                                  pkt.payload_size, sizeof(DataPayload));
                 }
             }
 
             // ---- BASE: receive ACK from node ----
             else if (pkt.type == PKT_ACK) {
                 Serial.printf("[LoRa] RX ACK from node %d\n", pkt.source);
-
-                // Update node heartbeat (also handles online transition publish)
                 loraUpdateNodeSeen(pkt.source);
 
                 if (pkt.payload_size >= sizeof(AckPayload)) {
                     AckPayload ack;
                     memcpy(&ack, pkt.payload, sizeof(ack));
 
-                    Serial.printf("[ACK] cmd=%d result=%d state=%d\n",
-                                  ack.cmd, ack.result, ack.state);
+                    Serial.printf("[ACK] cmd=%d relay=%d result=%d state=%d\n",
+                                  ack.cmd, ack.relay_index, ack.result, ack.state);
 
                     // Find matching pending command and clear it
                     for (uint8_t i = 0; i < MAX_PENDING_COMMANDS; i++) {
                         if (pendingCmds[i].active &&
                             pendingCmds[i].node_id == pkt.source &&
-                            pendingCmds[i].cmd == ack.cmd) {
+                            pendingCmds[i].cmd == ack.cmd &&
+                            pendingCmds[i].relay_index == ack.relay_index) {
 
                             Serial.printf("[ACK] Matched pending command in slot %d\n", i);
 
-                            // Publish success status
                             char topic[64];
                             snprintf(topic, sizeof(topic),
                                      "lora/node_%d/cmd_status", pkt.source);
@@ -507,13 +525,14 @@ void loraLoop() {
                             // If ACK reports actual state, publish it immediately
                             if (ack.cmd == 1) {  // relay command
                                 snprintf(topic, sizeof(topic),
-                                         "lora/node_%d/relay", pkt.source);
+                                         "lora/node_%d/relay_%d", pkt.source,
+                                         ack.relay_index + 1);
                                 char buf[8];
                                 snprintf(buf, sizeof(buf), "%d", ack.state);
                                 mqttPublish(topic, buf, true);
                             }
 
-                            pendingCmds[i].active = false;  // Free the slot
+                            pendingCmds[i].active = false;
                             break;
                         }
                     }
@@ -523,37 +542,55 @@ void loraLoop() {
 #else
             // ---- NODE: receive commands from base ----
             if (pkt.type == PKT_CMD && pkt.destination == NODE_ID) {
-                if (pkt.payload[0] == 1 && pkt.payload_size >= 2) {
-                    uint8_t value = pkt.payload[1];
+                if (pkt.payload[0] == 1 && pkt.payload_size >= 3) {
+                    // cmd=1 (relay), payload[1]=relay_index, payload[2]=value
+                    uint8_t relay_index = pkt.payload[1];
+                    uint8_t value = pkt.payload[2];
 
-                    if (value == 1) {
-                        digitalWrite(RELAY_PIN, RELAY_ON);
-                        Serial.println("[NODE] Relay ON");
+                    if (relay_index < NODE_NUM_RELAYS) {
+                        if (value == 1) {
+                            digitalWrite(RELAY_PINS[relay_index], RELAY_ON);
+                            Serial.printf("[NODE] Relay %d ON\n", relay_index + 1);
+                        } else {
+                            digitalWrite(RELAY_PINS[relay_index], RELAY_OFF);
+                            Serial.printf("[NODE] Relay %d OFF\n", relay_index + 1);
+                        }
+
+                        // Read current state after execution
+                        uint8_t new_state =
+                            (digitalRead(RELAY_PINS[relay_index]) == RELAY_ON) ? 1 : 0;
+
+                        // Send ACK back to BASE
+                        sendAck(pkt.source, 1, relay_index, 1, new_state);
+
+                        // Also send back full sensor data
+                        float t = 0, h = 0, p = 0;
+                        if (sensorAvailable()) {
+                            t = bme.readTemperature();
+                            h = bme.readHumidity();
+                            p = bme.readPressure() / 100.0F;
+                        }
+
+                        uint8_t relay_states = readRelayStates();
+                        float voltages[NODE_NUM_SENSORS];
+                        for (uint8_t i = 0; i < NODE_NUM_SENSORS; i++) {
+                            voltages[i] = readZMPT101B(i);
+                        }
+                        uint8_t motor_states = 0;
+                        for (uint8_t i = 0; i < NODE_NUM_SENSORS; i++) {
+                            if (voltages[i] > MOTOR_THRESHOLDS[i]) {
+                                motor_states |= (1 << i);
+                            }
+                        }
+
+                        sendData(t, h, p, NODE_NUM_RELAYS, NODE_NUM_SENSORS,
+                                 relay_states, motor_states, voltages);
                     } else {
-                        digitalWrite(RELAY_PIN, RELAY_OFF);
-                        Serial.println("[NODE] Relay OFF");
+                        Serial.printf("[NODE] Invalid relay index: %d (max %d)\n",
+                                      relay_index, NODE_NUM_RELAYS - 1);
+                        // Send ACK with failure
+                        sendAck(pkt.source, 1, relay_index, 0, 0);
                     }
-
-                    // Read current state after execution
-                    uint8_t relay_state = (digitalRead(RELAY_PIN) == RELAY_ON) ? 1 : 0;
-
-                    // NEW: Send ACK back to BASE
-                    sendAck(pkt.source, 1, 1, relay_state);
-
-                    // Also send back full sensor data (same as before)
-                    float t = 0, h = 0, p = 0;
-                    float voltage = 0;
-                    uint8_t motor_state = 0;
-
-                    if (sensorAvailable()) {
-                        t = bme.readTemperature();
-                        h = bme.readHumidity();
-                        p = bme.readPressure() / 100.0F;
-                    }
-                    voltage = readZMPT101B();
-                    motor_state = (voltage > MOTOR_VOLTAGE_THRESHOLD) ? 1 : 0;
-
-                    sendData(t, h, p, relay_state, voltage, motor_state);
                 }
             }
 
@@ -573,7 +610,6 @@ void loraCheckHeartbeat() {
 
         bool now_online = (millis() - nodeInfo[nodeId].last_seen_ms) < HEARTBEAT_OFFLINE_TIMEOUT;
 
-        // Only publish on state TRANSITION (avoids MQTT spam)
         if (now_online != nodeInfo[nodeId].is_online) {
             nodeInfo[nodeId].is_online = now_online;
 

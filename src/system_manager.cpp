@@ -9,19 +9,17 @@ static unsigned long lastHeartbeatCheck = 0;
 void baseLoop() {
     wifiLoop();
     mqttLoop();
-   // systemLoop();
     loraLoop();
     sensorLoop();
 
-    // NEW: Process pending ACK timeouts and retries
+    // Process pending ACK timeouts and retries
     loraProcessPendingAcks();
 
-    // NEW: Periodically check node online/offline status
+    // Periodically check node online/offline status
     if (millis() - lastHeartbeatCheck >= HEARTBEAT_CHECK_INTERVAL) {
         lastHeartbeatCheck = millis();
         loraCheckHeartbeat();
     }
-
 }
 
 void nodeLoop() {

@@ -3,6 +3,7 @@
 #include "sensor_manager.h"
 #include "system_manager.h"
 #include "lora_manager.h"
+#include "config.h"
 
 
 void setup() {
@@ -17,7 +18,8 @@ void setup() {
     wifiInit();
     mqttInit();
 #else
-    Serial.println("Role: NODE");
+    Serial.printf("Role: NODE (%d relays, %d sensors)\n",
+                  NODE_NUM_RELAYS, NODE_NUM_SENSORS);
 #endif
 }
 

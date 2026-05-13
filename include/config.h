@@ -2,11 +2,18 @@
 #include <IPAddress.h>
 #include "secret.h"
 
+// ============================================================
+// Node Identity
+// ============================================================
+
 #define NODE_ID 15
 #define BASE_ID 0
 
-// #define WIFI_STATIC_IP  true
+// ============================================================
+// WiFi
+// ============================================================
 
+// #define WIFI_STATIC_IP  true
 // #define WIFI_IP         IPAddress(192,168,88,13)
 // #define WIFI_GATEWAY    IPAddress(192,168,88,1)
 // #define WIFI_SUBNET     IPAddress(255,255,0,0)
@@ -15,42 +22,77 @@
 #define WIFI_RETRY_INTERVAL  5000
 #define WIFI_RESTART_TIMEOUT 300000
 
-//MQTT
+// ============================================================
+// MQTT
+// ============================================================
 
 #define MQTT_CLIENT_ID "lora_base"
 #define MQTT_RETRY_INTERVAL 5000
 #define MQTT_BUFFER_SIZE    1024
 
-// Relay
-#define RELAY_PIN 26
+// ============================================================
+// Node Profile — Configure per-node hardware here
+// ============================================================
+// Change NODE_NUM_RELAYS and NODE_NUM_SENSORS for each node.
+// Pins and calibration arrays must match the count above.
+//
+// Example for 1-relay node (original):
+//   #define NODE_NUM_RELAYS  1
+//   #define NODE_NUM_SENSORS 1
+//
+// Example for 4-relay + 4-ZMPT node:
+//   #define NODE_NUM_RELAYS  4
+//   #define NODE_NUM_SENSORS 4
+// ============================================================
+
+#define NODE_NUM_RELAYS  1
+#define NODE_NUM_SENSORS 1
+
+// Relay pins — must have exactly NODE_NUM_RELAYS entries
+static const uint8_t RELAY_PINS[NODE_NUM_RELAYS] = {26};
+
+// Relay active level (all relays share the same logic)
 #define RELAY_ON  LOW
 #define RELAY_OFF HIGH
 
-// ZMPT101B Voltage Sensor
-#define ZMPT101B_PIN         25     // ADC pin connected to ZMPT101B output
-#define ZMPT101B_CALIBRATION 470.35  // Calibration factor — MUST be adjusted for your module!
-                                   // How to calibrate:
-                                   // 1. Apply known voltage (e.g. 220V) to ZMPT101B
-                                   // 2. Read raw RMS from serial log: "[ZMPT101B] raw_rms=XXX"
-                                   // 3. CALIBRATION = actual_voltage / raw_rms
-                                   // Example: if raw_rms=450 and actual=220V, then CALIBRATION=0.489
-#define ZMPT101B_SAMPLE_MS   40    // Sampling window in ms (2 full cycles at 50Hz)
-#define ZMPT101B_ZERO_THRESHOLD 5.0 // Voltage below this is considered 0V (noise floor)
+// ZMPT101B ADC pins — must have exactly NODE_NUM_SENSORS entries
+// NOTE: GPIO 25 = ADC2 (works only without WiFi, fine for NODE)
+//       GPIO 32,33,34 = ADC1 (always works, more stable)
+static const uint8_t ZMPT_PINS[NODE_NUM_SENSORS] = {25};
 
-// Motor (derived from ZMPT101B voltage)
-#define MOTOR_VOLTAGE_THRESHOLD 100.0  // Voltage above this means motor is ON
+// Per-channel ZMPT101B calibration factors
+// How to calibrate: apply known voltage, read raw_rms from serial,
+// then CALIBRATION = actual_voltage / v_rms_raw
+static const float ZMPT_CALIBRATIONS[NODE_NUM_SENSORS] = {
+    470.35
+};
 
-// Motor
-//#define MOTOR_PIN 25
-//#define MOTOR_THRESHOLD 2000
+// Per-channel motor ON thresholds (voltage above this = motor running)
+static const float MOTOR_THRESHOLDS[NODE_NUM_SENSORS] = {
+    100.0
+};
 
-// Sensor
-#define SENSOR_INTERVAL 60000
+// ZMPT101B sampling parameters
+#define ZMPT101B_SAMPLE_MS      40     // Sampling window (2 cycles at 50Hz)
+#define ZMPT101B_ZERO_THRESHOLD 5.0    // Noise floor — below this = 0V
 
+// ============================================================
+// Sensor timing
+// ============================================================
+
+#define SENSOR_INTERVAL 180000  // 3 minutes  
+
+// ============================================================
 // LoRa protocol
+// ============================================================
+
 #define PKT_DATA 1
 #define PKT_CMD  2
 #define PKT_ACK  3
+
+// Maximum number of relays/sensors per node (protocol limit)
+#define MAX_RELAYS_PER_NODE  4
+#define MAX_SENSORS_PER_NODE 4
 
 // LoRa pins
 #define LORA_RX 16
@@ -69,28 +111,14 @@
 // ACK (Acknowledgment) Configuration
 // ============================================================
 
-// Time to wait for ACK response from NODE (milliseconds)
 #define ACK_TIMEOUT_MS      2000
-
-// Maximum number of retry attempts for unacknowledged commands
 #define ACK_MAX_RETRIES     3
-
-// Delay between retry attempts (milliseconds)
 #define ACK_RETRY_DELAY_MS  1000
-
-// How often to check pending ACKs and process retries (milliseconds)
 #define ACK_CHECK_INTERVAL  500
 
 // ============================================================
 // Heartbeat / Online Detection Configuration
 // ============================================================
 
-// How often BASE checks node online status (milliseconds)
-#define HEARTBEAT_CHECK_INTERVAL  30000
-
-// If no packet received from node within this time, it's OFFLINE (milliseconds)
-// Should be at least 3x SENSOR_INTERVAL to avoid false positives
-#define HEARTBEAT_OFFLINE_TIMEOUT 180000  // 3 minutes
-
-// Maximum number of nodes to track (node IDs 0..255, we allocate this many slots)
-#define MAX_TRACKED_NODES  32
+#define HEARTBEAT_CHECK_INTERVAL  60000
+#define HEARTBEAT_OFFLINE_TIMEOUT 300000  // 5 minutes

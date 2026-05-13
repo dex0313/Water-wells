@@ -20,12 +20,6 @@ void mqttPublish(const char* topic, const char* payload, bool retained = false);
 static void sendBaseDiscovery() {
     if (baseDiscoverySent) return;
 
-    const char* device =
-        "{\"identifiers\":[\"lora_base\"],"
-        "\"name\":\"LoRa Base\","
-        "\"model\":\"ESP32 LoRa Gateway\","
-        "\"manufacturer\":\"DIY\"}";
-
     // Temperature
     mqttPublish(
         "homeassistant/sensor/lora_base_temp/config",
@@ -81,10 +75,14 @@ static void sendBaseDiscovery() {
     Serial.println("[MQTT] Base discovery sent");
 }
 
-void publishDiscovery(uint16_t node_id) {
+// ============================================================
+// Dynamic Node Discovery — creates entities based on node profile
+// ============================================================
+
+void publishDiscovery(uint16_t node_id, uint8_t num_relays, uint8_t num_sensors) {
 #ifdef ROLE_BASE
     char topic[128];
-    char payload[512];
+    char payload[600];
 
     char device_id[32];
     snprintf(device_id, sizeof(device_id), "node_%d", node_id);
@@ -92,190 +90,146 @@ void publishDiscovery(uint16_t node_id) {
     char device_name[64];
     snprintf(device_name, sizeof(device_name), "LoRa Node %d", node_id);
 
+    // Common device JSON fragment used in all entities
+    char device_json[200];
+    snprintf(device_json, sizeof(device_json),
+        "{\"identifiers\":[\"%s\"],"
+        "\"name\":\"%s\","
+        "\"model\":\"ESP32 LoRa Node\","
+        "\"manufacturer\":\"DIY\"}",
+        device_id, device_name);
+
     // --- TEMPERATURE ---
     snprintf(topic, sizeof(topic),
         "homeassistant/sensor/%s_temperature/config", device_id);
-
     snprintf(payload, sizeof(payload),
-        "{"
-        "\"name\":\"%s Temperature\","
+        "{\"name\":\"%s Temperature\","
         "\"state_topic\":\"lora/%s/temperature\","
         "\"unit_of_measurement\":\"°C\","
         "\"device_class\":\"temperature\","
         "\"unique_id\":\"%s_temp\","
-        "\"device\":{"
-            "\"identifiers\":[\"%s\"],"
-            "\"name\":\"%s\","
-            "\"model\":\"ESP32 LoRa Node\","
-            "\"manufacturer\":\"DIY\""
-        "}"
-        "}",
-        device_name, device_id, device_id, device_id, device_name
-    );
+        "\"device\":%s}",
+        device_name, device_id, device_id, device_json);
     mqttPublish(topic, payload, true);
 
     // --- HUMIDITY ---
     snprintf(topic, sizeof(topic),
         "homeassistant/sensor/%s_humidity/config", device_id);
-
     snprintf(payload, sizeof(payload),
-        "{"
-        "\"name\":\"%s Humidity\","
+        "{\"name\":\"%s Humidity\","
         "\"state_topic\":\"lora/%s/humidity\","
         "\"unit_of_measurement\":\"%%\","
         "\"device_class\":\"humidity\","
         "\"unique_id\":\"%s_hum\","
-        "\"device\":{"
-            "\"identifiers\":[\"%s\"],"
-            "\"name\":\"%s\","
-            "\"model\":\"ESP32 LoRa Node\","
-            "\"manufacturer\":\"DIY\""
-        "}"
-        "}",
-        device_name, device_id, device_id, device_id, device_name
-    );
+        "\"device\":%s}",
+        device_name, device_id, device_id, device_json);
     mqttPublish(topic, payload, true);
 
     // --- PRESSURE ---
     snprintf(topic, sizeof(topic),
         "homeassistant/sensor/%s_pressure/config", device_id);
-
     snprintf(payload, sizeof(payload),
-        "{"
-        "\"name\":\"%s Pressure\","
+        "{\"name\":\"%s Pressure\","
         "\"state_topic\":\"lora/%s/pressure\","
         "\"unit_of_measurement\":\"hPa\","
         "\"device_class\":\"pressure\","
         "\"unique_id\":\"%s_press\","
-        "\"device\":{"
-            "\"identifiers\":[\"%s\"],"
-            "\"name\":\"%s\","
-            "\"model\":\"ESP32 LoRa Node\","
-            "\"manufacturer\":\"DIY\""
-        "}"
-        "}",
-        device_name, device_id, device_id, device_id, device_name
-    );
+        "\"device\":%s}",
+        device_name, device_id, device_id, device_json);
     mqttPublish(topic, payload, true);
 
-    // --- VOLTAGE SENSOR (ZMPT101B) ---
-    snprintf(topic, sizeof(topic),
-        "homeassistant/sensor/%s_voltage/config", device_id);
+    // --- RELAY SWITCHES (dynamic count) ---
+    for (uint8_t i = 0; i < num_relays; i++) {
+        snprintf(topic, sizeof(topic),
+            "homeassistant/switch/%s_relay_%d/config", device_id, i + 1);
+        snprintf(payload, sizeof(payload),
+            "{\"name\":\"%s Relay %d\","
+            "\"command_topic\":\"lora/%s/cmd_%d\","
+            "\"state_topic\":\"lora/%s/relay_%d\","
+            "\"payload_on\":\"1\","
+            "\"payload_off\":\"0\","
+            "\"unique_id\":\"%s_relay_%d\","
+            "\"device\":%s}",
+            device_name, i + 1,
+            device_id, i + 1,
+            device_id, i + 1,
+            device_id, i + 1,
+            device_json);
+        mqttPublish(topic, payload, true);
+    }
 
-    snprintf(payload, sizeof(payload),
-        "{"
-        "\"name\":\"%s Voltage\","
-        "\"state_topic\":\"lora/%s/voltage\","
-        "\"unit_of_measurement\":\"V\","
-        "\"device_class\":\"voltage\","
-        "\"unique_id\":\"%s_voltage\","
-        "\"device\":{"
-            "\"identifiers\":[\"%s\"],"
-            "\"name\":\"%s\","
-            "\"model\":\"ESP32 LoRa Node\","
-            "\"manufacturer\":\"DIY\""
-        "}"
-        "}",
-        device_name, device_id, device_id, device_id, device_name
-    );
-    mqttPublish(topic, payload, true);
+    // --- VOLTAGE SENSORS (dynamic count) ---
+    for (uint8_t i = 0; i < num_sensors; i++) {
+        snprintf(topic, sizeof(topic),
+            "homeassistant/sensor/%s_voltage_%d/config", device_id, i + 1);
+        snprintf(payload, sizeof(payload),
+            "{\"name\":\"%s Voltage %d\","
+            "\"state_topic\":\"lora/%s/voltage_%d\","
+            "\"unit_of_measurement\":\"V\","
+            "\"device_class\":\"voltage\","
+            "\"unique_id\":\"%s_voltage_%d\","
+            "\"device\":%s}",
+            device_name, i + 1,
+            device_id, i + 1,
+            device_id, i + 1,
+            device_json);
+        mqttPublish(topic, payload, true);
+    }
 
-    // --- MOTOR BINARY SENSOR (derived from voltage) ---
-    snprintf(topic, sizeof(topic),
-        "homeassistant/binary_sensor/%s_motor/config", device_id);
-
-    snprintf(payload, sizeof(payload),
-        "{"
-        "\"name\":\"%s Motor\","
-        "\"state_topic\":\"lora/%s/motor\","
-        "\"payload_on\":\"1\","
-        "\"payload_off\":\"0\","
-        "\"device_class\":\"power\","
-        "\"unique_id\":\"%s_motor\","
-        "\"device\":{"
-            "\"identifiers\":[\"%s\"],"
-            "\"name\":\"%s\","
-            "\"model\":\"ESP32 LoRa Node\","
-            "\"manufacturer\":\"DIY\""
-        "}"
-        "}",
-        device_name, device_id, device_id, device_id, device_name
-    );
-    mqttPublish(topic, payload, true);
-
-    // --- RELAY SWITCH ---
-    snprintf(topic, sizeof(topic),
-        "homeassistant/switch/%s_relay/config", device_id);
-
-    snprintf(payload, sizeof(payload),
-        "{"
-        "\"name\":\"%s Relay\","
-        "\"command_topic\":\"lora/%s/cmd\","
-        "\"state_topic\":\"lora/%s/relay\","
-        "\"payload_on\":\"1\","
-        "\"payload_off\":\"0\","
-        "\"unique_id\":\"%s_relay\","
-        "\"device\":{"
-            "\"identifiers\":[\"%s\"],"
-            "\"name\":\"%s\","
-            "\"model\":\"ESP32 LoRa Node\","
-            "\"manufacturer\":\"DIY\""
-        "}"
-        "}",
-        device_name, device_id, device_id, device_id, device_id, device_name
-    );
-    mqttPublish(topic, payload, true);
+    // --- MOTOR BINARY SENSORS (dynamic count, derived from voltage) ---
+    for (uint8_t i = 0; i < num_sensors; i++) {
+        snprintf(topic, sizeof(topic),
+            "homeassistant/binary_sensor/%s_motor_%d/config", device_id, i + 1);
+        snprintf(payload, sizeof(payload),
+            "{\"name\":\"%s Motor %d\","
+            "\"state_topic\":\"lora/%s/motor_%d\","
+            "\"payload_on\":\"1\","
+            "\"payload_off\":\"0\","
+            "\"device_class\":\"power\","
+            "\"unique_id\":\"%s_motor_%d\","
+            "\"device\":%s}",
+            device_name, i + 1,
+            device_id, i + 1,
+            device_id, i + 1,
+            device_json);
+        mqttPublish(topic, payload, true);
+    }
 
     // --- ONLINE STATUS (connectivity binary sensor) ---
     snprintf(topic, sizeof(topic),
         "homeassistant/binary_sensor/%s_online/config", device_id);
-
     snprintf(payload, sizeof(payload),
-        "{"
-        "\"name\":\"%s Online\","
+        "{\"name\":\"%s Online\","
         "\"state_topic\":\"lora/%s/online\","
         "\"payload_on\":\"1\","
         "\"payload_off\":\"0\","
         "\"device_class\":\"connectivity\","
         "\"unique_id\":\"%s_online\","
-        "\"device\":{"
-            "\"identifiers\":[\"%s\"],"
-            "\"name\":\"%s\","
-            "\"model\":\"ESP32 LoRa Node\","
-            "\"manufacturer\":\"DIY\""
-        "}"
-        "}",
-        device_name, device_id, device_id, device_id, device_name
-    );
+        "\"device\":%s}",
+        device_name, device_id, device_id, device_json);
     mqttPublish(topic, payload, true);
 
     // --- COMMAND STATUS (ACK result sensor) ---
     snprintf(topic, sizeof(topic),
         "homeassistant/sensor/%s_cmd_status/config", device_id);
-
     snprintf(payload, sizeof(payload),
-        "{"
-        "\"name\":\"%s Command Status\","
+        "{\"name\":\"%s Command Status\","
         "\"state_topic\":\"lora/%s/cmd_status\","
         "\"icon\":\"mdi:check-circle\","
         "\"unique_id\":\"%s_cmd_status\","
-        "\"device\":{"
-            "\"identifiers\":[\"%s\"],"
-            "\"name\":\"%s\","
-            "\"model\":\"ESP32 LoRa Node\","
-            "\"manufacturer\":\"DIY\""
-        "}"
-        "}",
-        device_name, device_id, device_id, device_id, device_name
-    );
+        "\"device\":%s}",
+        device_name, device_id, device_id, device_json);
     mqttPublish(topic, payload, true);
 
-    Serial.printf("[MQTT] Discovery published for %s (with Online + CmdStatus)\n", device_id);
+    Serial.printf("[MQTT] Discovery published for %s (%d relays, %d sensors)\n",
+                  device_id, num_relays, num_sensors);
 #endif
 }
 
 // ============================================================
-// MQTT Callback (FIXED: no double processing)
+// MQTT Callback — parse commands with relay index
+// Topic format: lora/node_<id>/cmd_<relay_num>
+// Example: lora/node_15/cmd_1 = "1"  →  relay 1 ON
 // ============================================================
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
@@ -288,19 +242,19 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     String t(topic);
     Serial.printf("[MQTT] cmd: %s = %s\n", topic, msg.c_str());
 
-    // topic format: lora/node_<id>/cmd
-    if (t.startsWith("lora/node_") && t.endsWith("/cmd")) {
-        // Extract node ID between "lora/node_" and "/cmd"
+    // topic format: lora/node_<id>/cmd_<relay_num>
+    if (t.startsWith("lora/node_") && t.indexOf("/cmd_") > 0) {
         int idStart = 10; // after "lora/node_"
-        int idEnd = t.indexOf("/cmd", idStart);
-        if (idEnd > idStart) {
-            int node = t.substring(idStart, idEnd).toInt();
+        int cmdPos = t.indexOf("/cmd_");
+        if (cmdPos > idStart) {
+            int node = t.substring(idStart, cmdPos).toInt();
+            int relayNum = t.substring(cmdPos + 5).toInt(); // after "/cmd_"
+            uint8_t relay_index = (relayNum > 0) ? (relayNum - 1) : 0; // 0-based
             uint8_t value = (msg == "1") ? 1 : 0;
 
-            //sendCommand(node, 1, value);
-            sendCommandWithAck(node, 1, value);
-            //Serial.printf("[MQTT] Send command to node %d: %d\n", node, value);
-            Serial.printf("[MQTT] Send command (with ACK) to node %d: %d\n", node, value);
+            sendCommandWithAck(node, 1, relay_index, value);
+            Serial.printf("[MQTT] Send command (with ACK) to node %d relay %d: %d\n",
+                          node, relayNum, value);
         }
     }
 #endif
@@ -335,14 +289,11 @@ static void mqttConnect() {
 
         Serial.println("[MQTT] Connected");
         client.publish("lora/base/status", "online", true);
-        client.subscribe("lora/+/cmd");
 
-        // Re-send discovery on every reconnection
-        // so that Home Assistant re-registers devices
+        // Subscribe to all relay command topics: lora/+/cmd_+
+        client.subscribe("lora/+/cmd_+");
+
         sendBaseDiscovery();
-
-        // Re-publish all node online/offline statuses
-        // to ensure HA has the current state (not stale retained values)
         loraPublishAllNodeStatuses();
     } else {
         Serial.printf("[MQTT] Connect failed, rc=%d\n", client.state());
