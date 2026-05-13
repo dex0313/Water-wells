@@ -289,10 +289,18 @@ static void mqttConnect() {
 
         Serial.println("[MQTT] Connected");
         client.publish("lora/base/status", "online", true);
-        client.loop();   // ← NEW: обработать CONNACK и сбросить буфер
-        delay(50);       // ← NEW: дать время TCP-стеку
-        // Subscribe to all relay command topics: lora/+/cmd_+
-        client.subscribe("lora/+/cmd_+");
+
+        // Subscribe to relay command topics.
+        // IMPORTANT: MQTT spec requires '+' wildcard to occupy an ENTIRE
+        // topic level. "lora/+/cmd_+" is INVALID — Mosquitto rejects it
+        // as "Invalid subscription string". We must subscribe to each
+        // cmd_N topic individually (or use "lora/+/+" with callback filtering).
+        for (uint8_t i = 1; i <= MAX_RELAYS_PER_NODE; i++) {
+            char sub_topic[32];
+            snprintf(sub_topic, sizeof(sub_topic), "lora/+/cmd_%d", i);
+            client.subscribe(sub_topic);
+        }
+        Serial.printf("[MQTT] Subscribed to lora/+/cmd_1..%d\n", MAX_RELAYS_PER_NODE);
 
         sendBaseDiscovery();
         loraPublishAllNodeStatuses();
