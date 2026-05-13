@@ -289,7 +289,8 @@ static void mqttConnect() {
 
         Serial.println("[MQTT] Connected");
         client.publish("lora/base/status", "online", true);
-
+        client.loop();   // ← NEW: обработать CONNACK и сбросить буфер
+        delay(50);       // ← NEW: дать время TCP-стеку
         // Subscribe to all relay command topics: lora/+/cmd_+
         client.subscribe("lora/+/cmd_+");
 
