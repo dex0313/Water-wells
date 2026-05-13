@@ -4,6 +4,7 @@
 #include "mqtt_manager.h"
 #include "config.h"
 #include "sensor_manager.h"
+#include "persistence.h"
 
 HardwareSerial loraSerial(2);
 
@@ -555,6 +556,12 @@ void loraLoop() {
                             digitalWrite(RELAY_PINS[relay_index], RELAY_OFF);
                             Serial.printf("[NODE] Relay %d OFF\n", relay_index + 1);
                         }
+
+                        // Save relay states to NVS immediately after change.
+                        // This ensures that if the node reboots unexpectedly
+                        // (power loss, watchdog, crash), the relay states
+                        // will be restored on the next boot.
+                        nvsSaveRelayStates(readRelayStates());
 
                         // Read current state after execution
                         uint8_t new_state =

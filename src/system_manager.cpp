@@ -3,10 +3,13 @@
 #include "sensor_manager.h"
 #include "lora_manager.h"
 #include "config.h"
+#include "persistence.h"
 
 static unsigned long lastHeartbeatCheck = 0;
 
 void baseLoop() {
+    wdtReset();            // Feed the watchdog
+
     wifiLoop();
     mqttLoop();
     loraLoop();
@@ -23,6 +26,8 @@ void baseLoop() {
 }
 
 void nodeLoop() {
+    wdtReset();            // Feed the watchdog
+
     loraLoop();
     sensorLoop();
 }

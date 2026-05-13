@@ -122,3 +122,27 @@ static const float MOTOR_THRESHOLDS[NODE_NUM_SENSORS] = {
 
 #define HEARTBEAT_CHECK_INTERVAL  60000
 #define HEARTBEAT_OFFLINE_TIMEOUT 300000  // 5 minutes
+
+// ============================================================
+// Watchdog Timer
+// ============================================================
+// If the main loop does not call wdtReset() within this time,
+// the ESP32 will automatically reboot. This protects against
+// firmware hangs, infinite loops, and I2C/UART freezes.
+// The timeout must be longer than the longest blocking operation
+// (e.g. ZMPT101B sampling = 40ms per channel, so 160ms for 4).
+// ============================================================
+
+#define WDT_TIMEOUT_S  30    // Watchdog timeout in seconds
+
+// ============================================================
+// NVS (Non-Volatile Storage) — Relay State Persistence
+// ============================================================
+// When enabled, relay states are saved to flash on every change
+// and restored on boot. This prevents pumps from staying off
+// after a power outage or unexpected reboot.
+// ============================================================
+
+#define NVS_NAMESPACE      "ww_relay"     // NVS namespace (max 15 chars)
+#define NVS_KEY_RELAYS     "states"       // Key for relay bitmask
+#define NVS_KEY_BOOT_CNT   "boots"        // Key for boot counter (diagnostic)

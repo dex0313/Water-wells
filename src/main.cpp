@@ -4,12 +4,20 @@
 #include "system_manager.h"
 #include "lora_manager.h"
 #include "config.h"
+#include "persistence.h"
 
 
 void setup() {
     Serial.begin(115200);
     delay(500);
     Serial.println("=== Water Wells System ===");
+
+    // Initialize watchdog timer FIRST — protects the rest of setup
+    wdtInit();
+
+    // Increment boot counter (diagnostic — visible in serial log)
+    nvsIncrementBootCount();
+
     loraInit();
     sensorInit();
 

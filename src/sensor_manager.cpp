@@ -4,6 +4,7 @@
 #include "mqtt_manager.h"
 #include "lora_manager.h"
 #include "sensor_manager.h"
+#include "persistence.h"
 #include <WiFi.h>
 
 Adafruit_BME280 bme;
@@ -28,11 +29,15 @@ void sensorInit() {
     Serial.println("[SENSOR] BME280 init OK");
 
 #ifdef ROLE_NODE
-    // Initialize all relay pins
+    // Initialize all relay pins (first set to OFF as safe default)
     for (uint8_t i = 0; i < NODE_NUM_RELAYS; i++) {
         pinMode(RELAY_PINS[i], OUTPUT);
         digitalWrite(RELAY_PINS[i], RELAY_OFF);
     }
+
+    // Restore relay states from NVS (saved before last reboot/power-loss)
+    // This ensures pumps/valves return to their previous state automatically.
+    restoreRelayStates();
 
     // Configure ADC for ZMPT101B
     analogSetAttenuation(ADC_11db);        // Full range 0-3.3V
@@ -121,6 +126,34 @@ float readZMPT101B(uint8_t channel) {
     Serial.printf("[ZMPT101B] Ch%d: raw_rms=%.1f ADC, voltage=%.1f V\n",
                   channel, rms_adc, voltage);
     return voltage;
+}
+
+// ============================================================
+// Restore relay states from NVS after boot
+// ============================================================
+// Reads the saved bitmask from flash and applies each bit
+// to the corresponding relay pin. This is called once during
+// sensorInit() so that relays return to their pre-reboot state.
+// ============================================================
+
+void restoreRelayStates() {
+    uint8_t saved = nvsLoadRelayStates();
+
+    // Clamp: only bits 0..NODE_NUM_RELAYS-1 are valid
+    uint8_t valid_mask = (1 << NODE_NUM_RELAYS) - 1;
+    saved &= valid_mask;
+
+    for (uint8_t i = 0; i < NODE_NUM_RELAYS; i++) {
+        if (saved & (1 << i)) {
+            digitalWrite(RELAY_PINS[i], RELAY_ON);
+            Serial.printf("[NVS] Relay %d restored -> ON\n", i + 1);
+        } else {
+            digitalWrite(RELAY_PINS[i], RELAY_OFF);
+            // OFF is already the default from init, but log for clarity
+        }
+    }
+
+    Serial.printf("[NVS] Relay states restored: 0x%02X\n", saved);
 }
 
 // ============================================================

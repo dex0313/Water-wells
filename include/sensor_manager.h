@@ -25,3 +25,10 @@ uint8_t readRelayStates();
  * Bit 0 = sensor 0, bit 1 = sensor 1, etc.
  */
 uint8_t readMotorStates();
+
+/**
+ * Restore relay states from NVS after boot.
+ * Reads the saved bitmask and applies each bit to the
+ * corresponding relay pin. Called once during sensorInit().
+ */
+void restoreRelayStates();
