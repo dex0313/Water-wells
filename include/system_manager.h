@@ -1,3 +1,8 @@
 #pragma once
-void baseLoop();
-void nodeLoop();
+// ============================================================
+// system_manager.h — main loop bodies per role
+// ============================================================
+
+void baseLoop();       // ROLE_BASE
+void nodeLoop();       // ROLE_NODE
+void repeaterLoop();   // ROLE_REPEATER

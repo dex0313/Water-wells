@@ -6,7 +6,7 @@
 // Node Identity
 // ============================================================
 
-#define NODE_ID 15
+#define NODE_ID 2
 #define BASE_ID 0
 
 // ============================================================
@@ -45,11 +45,11 @@
 //   #define NODE_NUM_SENSORS 4
 // ============================================================
 
-#define NODE_NUM_RELAYS  1
-#define NODE_NUM_SENSORS 1
+#define NODE_NUM_RELAYS  4
+#define NODE_NUM_SENSORS 4
 
 // Relay pins — must have exactly NODE_NUM_RELAYS entries
-static const uint8_t RELAY_PINS[NODE_NUM_RELAYS] = {26};
+static const uint8_t RELAY_PINS[NODE_NUM_RELAYS] = {26, 27, 14, 12};
 
 // Relay active level (all relays share the same logic)
 #define RELAY_ON  LOW
@@ -58,19 +58,15 @@ static const uint8_t RELAY_PINS[NODE_NUM_RELAYS] = {26};
 // ZMPT101B ADC pins — must have exactly NODE_NUM_SENSORS entries
 // NOTE: GPIO 25 = ADC2 (works only without WiFi, fine for NODE)
 //       GPIO 32,33,34 = ADC1 (always works, more stable)
-static const uint8_t ZMPT_PINS[NODE_NUM_SENSORS] = {25};
+static const uint8_t ZMPT_PINS[NODE_NUM_SENSORS] = {25, 33, 32, 34};
 
 // Per-channel ZMPT101B calibration factors
 // How to calibrate: apply known voltage, read raw_rms from serial,
 // then CALIBRATION = actual_voltage / v_rms_raw
-static const float ZMPT_CALIBRATIONS[NODE_NUM_SENSORS] = {
-    470.35
-};
+static const float ZMPT_CALIBRATIONS[NODE_NUM_SENSORS] = {470.35, 470.35, 470.35, 470.35};
 
 // Per-channel motor ON thresholds (voltage above this = motor running)
-static const float MOTOR_THRESHOLDS[NODE_NUM_SENSORS] = {
-    100.0
-};
+static const float MOTOR_THRESHOLDS[NODE_NUM_SENSORS] = {100.0, 100.0, 100.0, 100.0};
 
 // ZMPT101B sampling parameters
 #define ZMPT101B_SAMPLE_MS      40     // Sampling window (2 cycles at 50Hz)

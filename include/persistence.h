@@ -47,3 +47,11 @@ uint8_t nvsLoadRelayStates();
  * @return  Number of times the device has booted
  */
 uint32_t nvsIncrementBootCount();
+
+/**
+ * Value of the boot counter of THIS boot (without incrementing).
+ * Sent in PKT_STATUS diagnostics (R8.2).
+ *
+ * @return  Current boot counter value (0 if not incremented yet)
+ */
+uint32_t nvsBootCount();
